@@ -2,8 +2,8 @@ name: Auto Fetch worker.js
 
 on:
   schedule:
-    - cron: '0 3 * * *' # 每天凌晨 3 点自动检查更新
-  workflow_dispatch: # 支持手动运行
+    - cron: '0 3 * * *' # 每天 UTC 3 点自动检查更新
+  workflow_dispatch: # 支持手动点击 Trigger 运行
 
 jobs:
   fetch-script:
@@ -12,11 +12,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 获取完整历史以防冲突
+          fetch-depth: 0
 
-      - name: Download worker.js
+      - name: Download worker.js from Latest Release
         run: |
-          curl -sL https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/worker.js -o worker.js
+          # 1. 查询 BPB-Worker-Panel 最新 Release 的 worker.js 下载地址
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bia-pain-bache/BPB-Worker-Panel/releases/latest | grep -o '"browser_download_url": "[^"]*' | grep -i 'worker.js' | head -n 1 | cut -d '"' -f 4)
+          
+          # 2. 如果 Release 资产中没找到，备选从源码主分支抓取
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "未在 Latest Release 中找到 worker.js，尝试从源码主分支下载..."
+            DOWNLOAD_URL="https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/worker.js"
+          fi
+
+          echo "正在下载: $DOWNLOAD_URL"
+          curl -sL "$DOWNLOAD_URL" -o worker.js
+
+          # 3. 校验文件大小（必须大于 500 字节），防止下载到 404 报错文本
+          FILE_SIZE=$(wc -c < worker.js)
+          if [ "$FILE_SIZE" -lt 500 ]; then
+            echo "错误：下载的文件大小只有 $FILE_SIZE 字节，内容可能无效/404："
+            cat worker.js
+            exit 1
+          fi
 
       - name: Commit and Push if updated
         run: |
@@ -24,10 +42,9 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add worker.js
           if ! git diff --staged --quiet; then
-            git commit -m "Auto update worker.js from upstream BPB-Worker-Panel"
-            # 关键修改：在 push 前先把远程最新的代码变基拉取过来
+            git commit -m "来自上游 BPB-Worker-Panel 的自动更新 worker.js"
             git pull origin main --rebase
             git push origin main
           else
-            echo "No changes found in worker.js"
+            echo "worker.js 没有变化，无需更新。"
           fi

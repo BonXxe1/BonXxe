@@ -1,0 +1,30 @@
+name: Auto Fetch worker.js
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 每天凌晨 3 点自动检查更新
+  workflow_dispatch: # 支持手动运行
+
+jobs:
+  fetch-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download worker.js
+        run: |
+          # 自动从原仓库 main 分支抓取最新的 worker.js
+          curl -sL https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/worker.js -o worker.js
+
+      - name: Commit and Push if updated
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add worker.js
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto update worker.js from upstream BPB-Worker-Panel"
+            git push
+          else
+            echo "No changes found in worker.js"
+          fi
